@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <iostream>
 #include <algorithm>
+#include <iomanip>
 using namespace std;
 // Global variables
 unordered_map<string, User> users;
@@ -19,6 +20,27 @@ vector<string> split(const string &s, char delimiter) {
         tokens.push_back(token);
     }
     return tokens;
+}
+
+string generate_salt() {
+    unsigned char buf[16];
+    RAND_bytes(buf, 16);
+    stringstream ss;
+    ss << hex << setfill('0');
+    for (int i = 0; i < 16; ++i)
+        ss << setw(2) << (int)buf[i];
+    return ss.str();
+}
+
+string hash_password(const string &password, const string &salt) {
+    string salted = salt + password;
+    unsigned char hash[SHA256_DIGEST_LENGTH];
+    SHA256(reinterpret_cast<const unsigned char*>(salted.c_str()), salted.size(), hash);
+    stringstream ss;
+    ss << hex << setfill('0');
+    for (int i = 0; i < SHA256_DIGEST_LENGTH; ++i)
+        ss << setw(2) << (int)hash[i];
+    return ss.str();
 }
 
 void send_sync_update(const string &msg) {
@@ -42,10 +64,14 @@ void process_sync_message(const string &msg) {
     if(parts[1]=="CREATE_USER") {
         if(parts.size() < 4) return;
         string uid = parts[2];
-        string pwd = parts[3];
+        string pwd_or_hash = parts[3];
+        string salt = (parts.size() >= 5) ? parts[4] : "";
         lock_guard<mutex> lock(state_mutex);
-        users[uid] = User(uid, pwd);
-        cout << "[SYNC] Created user " << uid << " from peer\n";
+        if (users.find(uid) == users.end()) {
+            User u(uid, pwd_or_hash, salt);
+            users[uid] = u;
+            cout << "[SYNC] Created user " << uid << " from peer\n";
+        }
     }
     else if (parts[1] == "CREATE_GROUP") {
         if (parts.size() < 4) return;

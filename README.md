@@ -1,4 +1,4 @@
-# Peer-to-Peer File Sharing System
+# Secure Peer-to-Peer File Sharing System
 
 **Roll Number:** 2025201067  
 **Course:** Advanced Operating Systems — Assignment 3, Monsoon 2025  
@@ -33,12 +33,17 @@ A distributed peer-to-peer file sharing system inspired by BitTorrent. The syste
 - **Client:** A peer application that uploads, downloads, and shares files within groups. Each client runs an embedded peer server to serve file pieces to other clients.
 
 Key features:
+- **TLS 1.2+ encryption** on all communication channels (client↔tracker, tracker↔tracker)
+- **Mutual TLS (mTLS)** for P2P peer authentication with tracker-issued X.509 certificates
+- **RSA-2048 digital signatures** on file metadata to prevent tampering
+- **SHA-256** integrity verification at both piece-level and full-file level
+- **Salted password hashing** — passwords stored as SHA-256(salt + password), never plaintext
 - Multi-threaded concurrent piece downloads using **rarest-piece-first** selection
-- SHA1 integrity verification at both piece-level and full-file level
 - Multi-seeder support — downloads different pieces from different peers
 - Partial file serving — peers can serve pieces they've already downloaded even before completing the full file
 - Two-tracker synchronization with automatic reconnection
 - Persistent seeding state across client restarts
+- **PKI certificate chain** — tracker acts as Certificate Authority, issuing certs on login
 
 ---
 
@@ -51,23 +56,24 @@ Key features:
                     │  (Sync: 6100)    │                 │  (Main: 6001)    │
                     └────────┬─────────┘                 │  (Sync: 6101)    │
                              │                           └────────┬─────────┘
-                    TCP (persistent)                               │
-                             │                           TCP (persistent)
+                     TLS 1.2+ (persistent)                         │
+                             │                           TLS 1.2+ (persistent)
               ┌──────────────┼──────────────┐                     │
               ▼              ▼              ▼                     ▼
       ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
       │   Client A   │ │   Client B   │ │   Client C   │
       │ (Peer: 5001) │ │ (Peer: 5002) │ │ (Peer: 5003) │
+      │ [X.509 cert] │ │ [X.509 cert] │ │ [X.509 cert] │
       └──────┬───────┘ └──────┬───────┘ └──────────────┘
              │                │
-             └──── P2P ───────┘
+             └── mTLS P2P ────┘
            (GET_PIECE / GET_BITMAP)
 ```
 
 **Communication flows:**
-1. **Client ↔ Tracker:** Persistent TCP connection for user/group management, file metadata upload, seeder discovery
-2. **Client ↔ Client (P2P):** Short-lived TCP connections for piece transfer and bitmap queries
-3. **Tracker ↔ Tracker:** Persistent TCP connection for state synchronization with heartbeat keep-alive
+1. **Client ↔ Tracker:** TLS-encrypted persistent connection for user/group management, file metadata upload, seeder discovery
+2. **Client ↔ Client (P2P):** mTLS-authenticated short-lived connections for piece transfer and bitmap queries
+3. **Tracker ↔ Tracker:** TLS-encrypted persistent connection for state synchronization with heartbeat keep-alive
 
 ---
 
@@ -76,20 +82,30 @@ Key features:
 ```
 2025201067_A3/
 ├── README.md                    # This file
-├── Report.pdf                   # Technical report
+├── Report.tex                   # LaTeX technical report
+├── Makefile                     # Build system
 ├── tracker_info.txt             # Tracker configuration (id, ip, main_port, sync_port)
+├── certs/                       # PKI certificate infrastructure
+│   ├── generate_certs.sh        # Script to generate CA, tracker, and client certs
+│   ├── ca.crt / ca.key          # Certificate Authority (root of trust)
+│   ├── tracker.crt / tracker.key # Tracker server certificate (signed by CA)
+│   └── client_default.crt/.key  # Default client certificate (signed by CA)
 ├── server/                      # Tracker source files
-│   ├── tracker.cpp              # Main tracker: networking, sync threads, client accept loop
-│   ├── commands.cpp             # Command processing: user/group/file operations
+│   ├── tracker.cpp              # Main tracker: TLS server, sync threads, cert issuance
+│   ├── commands.cpp             # Command processing with signature storage
 │   ├── commands.h               # Command handler declarations
-│   ├── common.cpp               # Global state, sync message processing, utilities
-│   └── common.h                 # Shared data structures (User, Group, FileMetadata)
+│   ├── common.cpp               # Global state, password hashing, sync processing
+│   ├── common.h                 # Data structures (User with salt, FileMetadata with RSA sig)
+│   ├── tls_utils.h              # TLS context creation, I/O helpers, cert generation
+│   └── tls_utils.cpp            # TLS implementation
 └── client/                      # Client source files
-    ├── client.cpp               # Main client: CLI loop, tracker communication
-    ├── filesend.cpp             # File hashing, multi-threaded download engine
+    ├── client.cpp               # Main client: TLS connection, RSA signing, cert handling
+    ├── filesend.cpp             # SHA-256 hashing, multi-threaded download engine
     ├── filesend.h               # Download state, file metadata structures
     ├── peer.cpp                 # Embedded peer server: serves pieces and bitmaps
-    └── peer.h                   # Peer server declarations, shared state externs
+    ├── peer.h                   # Peer server declarations, shared state externs
+    ├── tls_utils.h / .cpp       # Client-side TLS and mTLS utilities
+    └── crypto_utils.h / .cpp    # RSA-2048 key generation, signing, verification
 ```
 
 ---
@@ -97,23 +113,24 @@ Key features:
 ## Compilation
 
 ### Prerequisites
-- **Compiler:** `g++` with C++17 support (GCC 7+ recommended)
-- **Libraries:** OpenSSL (`libssl-dev` / `openssl-devel`) for SHA1 hashing
+- **Compiler:** `g++` with C++17 support (GCC 7+ / Clang 10+)
+- **Libraries:** OpenSSL 1.1.1+ (`libssl-dev` / Homebrew `openssl`) for TLS, SHA-256, RSA
 - **Threading:** POSIX threads (`-pthread`)
 - **Make:** `make` utility for building
 
 ### Build the Project
-A `Makefile` is provided to simplify compilation.
-
 ```bash
-# Compile both the tracker and the client
+# Step 1: Generate PKI certificates (only needed once)
+make certs
+
+# Step 2: Compile both the tracker and the client
 make
 
 # Clean compiled binaries
 make clean
 ```
 
-> **Note:** The `Makefile` automatically includes the necessary Homebrew OpenSSL paths for macOS and suppresses OpenSSL 3.0 deprecation warnings for the legacy SHA1 API.
+> **Note:** The `Makefile` automatically links OpenSSL (`-lssl -lcrypto`) and includes Homebrew paths for macOS.
 
 ---
 

@@ -39,10 +39,10 @@ map<string,shared_ptr<DownloadState>>active_downloads;
 mutex active_downloads_mutex;
 
 /* ---------- helpers ---------- */
-static string sha1_to_hex(const unsigned char* hash) {
+static string sha256_to_hex(const unsigned char* hash) {
     stringstream ss;
     ss << hex << setfill('0');
-    for (int i = 0; i < SHA_DIGEST_LENGTH; ++i) {
+    for (int i = 0; i < SHA256_DIGEST_LENGTH; ++i) {
         ss << setw(2) << static_cast<unsigned int>(hash[i]);
     }
     return ss.str();
@@ -114,8 +114,8 @@ FileMetadata prepare_file_metadata(const string &file_path,const string &group_i
     meta.port = port;
 
     vector<char> buffer(CHUNK_SIZE);
-    SHA_CTX sha_ctx;
-    SHA1_Init(&sha_ctx);
+    SHA256_CTX sha_ctx;
+    SHA256_Init(&sha_ctx);
     while (true) {
         ssize_t bytes_read = read(fd, buffer.data(), CHUNK_SIZE);
         if (bytes_read < 0) {
@@ -124,15 +124,15 @@ FileMetadata prepare_file_metadata(const string &file_path,const string &group_i
         }
         if (bytes_read == 0) 
         break;
-        SHA1_Update(&sha_ctx, buffer.data(), bytes_read);
-        unsigned char piece_hash_raw[SHA_DIGEST_LENGTH];
-        SHA1(reinterpret_cast<unsigned char*>(buffer.data()), bytes_read, piece_hash_raw);
-        meta.piece_hashes.push_back(sha1_to_hex(piece_hash_raw));
+        SHA256_Update(&sha_ctx, buffer.data(), bytes_read);
+        unsigned char piece_hash_raw[SHA256_DIGEST_LENGTH];
+        SHA256(reinterpret_cast<unsigned char*>(buffer.data()), bytes_read, piece_hash_raw);
+        meta.piece_hashes.push_back(sha256_to_hex(piece_hash_raw));
     }
     close(fd);
-    unsigned char full_file_hash_raw[SHA_DIGEST_LENGTH];
-    SHA1_Final(full_file_hash_raw, &sha_ctx);
-    meta.file_hash = sha1_to_hex(full_file_hash_raw);
+    unsigned char full_file_hash_raw[SHA256_DIGEST_LENGTH];
+    SHA256_Final(full_file_hash_raw, &sha_ctx);
+    meta.file_hash = sha256_to_hex(full_file_hash_raw);
     return meta;
 }
 
@@ -260,9 +260,9 @@ static bool download_single_piece(DownloadState* state, int piece_index, int see
     close(peer_sock);
 
     // Verify SHA1 hash
-    unsigned char hashbuf[SHA_DIGEST_LENGTH];
-    SHA1(reinterpret_cast<unsigned char*>(piece_buffer.data()), payload_len, hashbuf);
-    string received_hash = sha1_to_hex(hashbuf);
+    unsigned char hashbuf[SHA256_DIGEST_LENGTH];
+    SHA256(reinterpret_cast<unsigned char*>(piece_buffer.data()), payload_len, hashbuf);
+    string received_hash = sha256_to_hex(hashbuf);
     if (received_hash != state->piece_hashes[piece_index]) {
         cout << "Piece " << piece_index << " hash mismatch from seeder " << seeder_index << ". Retrying..." << endl;
         return false;

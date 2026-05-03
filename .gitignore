@@ -1,4 +1,9 @@
-client/client
 server/tracker
+client/client
+*.o
 *.log
 .DS_Store
+certs/*.key
+certs/*.csr
+certs/*.srl
+sns/

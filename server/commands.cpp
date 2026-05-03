@@ -26,13 +26,16 @@ string cmd_create_user(const string &username, const string &password) {
     if (users.find(username) != users.end()) {
         return "User already exists\n";
     }
+    string salt = generate_salt();
+    string hashed = hash_password(password, salt);
     User u;
     u.username = username;
-    u.password = password;
+    u.password = hashed;
+    u.password_salt = salt;
     u.logged_in = false;
     users[username] = std::move(u);
-    send_sync_update("SYNC|CREATE_USER|"+username+"|"+password);
-    cout<< "[server] User '" << username << "' created successfully\n";
+    send_sync_update("SYNC|CREATE_USER|" + username + "|" + hashed + "|" + salt);
+    cout << "[SERVER] User '" << username << "' created (password hashed with SHA-256)\n";
     return "User created successfully\n";
 }
 
@@ -40,7 +43,9 @@ static string cmd_login(const string &username, const string &password, const st
     lock_guard<mutex> lock(state_mutex);
     auto it = users.find(username);
     if (it == users.end()) return "No such user\n";
-    if (it->second.password != password) return "Incorrect password\n";
+    // Verify password by hashing with stored salt and comparing
+    string hashed_input = hash_password(password, it->second.password_salt);
+    if (hashed_input != it->second.password) return "Incorrect password\n";
     if (it->second.logged_in) return "User already logged in elsewhere\n";
     
     size_t colon_pos = client_addr.find(':');
@@ -207,11 +212,11 @@ string process_command(const string &cmd_line, string &current_user, int newsock
     }
     
     else if (cmd == "UPLOAD_FILE") {
-        // BUG FIX: Added login check
         if (current_user.empty()) {
             return "ERROR: You must be logged in to upload a file.\n";
         }
-        if (tokens.size() != 6) {
+        // Format: UPLOAD_FILE <gid> <fname> <size> <hash> <piece_hashes> [signature] [pubkey_hex]
+        if (tokens.size() < 6) {
             return "ERROR: Invalid UPLOAD_FILE command format.\n";
         }
         string groupid = tokens[1];
@@ -219,6 +224,8 @@ string process_command(const string &cmd_line, string &current_user, int newsock
         long long filesize = stoll(tokens[3]);
         string file_hash = tokens[4];
         string all_hashes_str = tokens[5];
+        string signature = (tokens.size() >= 7) ? tokens[6] : "";
+        string pubkey_hex = (tokens.size() >= 8) ? tokens[7] : "";
 
         lock_guard<mutex> lock(state_mutex);
         auto group_it = groups.find(groupid);
@@ -240,6 +247,8 @@ string process_command(const string &cmd_line, string &current_user, int newsock
         new_file.filesize = filesize;
         new_file.file_hash = file_hash;
         new_file.seeders.push_back(current_user);
+        new_file.signature = signature;
+        new_file.uploader_pubkey = pubkey_hex;
 
         // Parse the pipe-separated hashes from the single token
         stringstream hash_stream(all_hashes_str);
@@ -251,7 +260,10 @@ string process_command(const string &cmd_line, string &current_user, int newsock
         }
 
         group.files[filename] = new_file;
-        cout << "[SERVER] User '" << current_user << "' uploaded metadata for file '" << filename << "'\n";
+        if (!signature.empty())
+            cout << "[SERVER] User '" << current_user << "' uploaded SIGNED metadata for file '" << filename << "'\n";
+        else
+            cout << "[SERVER] User '" << current_user << "' uploaded metadata for file '" << filename << "'\n";
 
         // Synchronize the update with the other tracker
         string sync_data = groupid + "|" + filename + "|" + to_string(filesize) + "|" + file_hash;
@@ -307,6 +319,10 @@ string process_command(const string &cmd_line, string &current_user, int newsock
         
         for (const auto& hash: meta.piece_hashes) {
             response += "|" + hash;
+        }
+        // Append RSA signature and public key if available
+        if (!meta.signature.empty() && !meta.uploader_pubkey.empty()) {
+            response += " SIG " + meta.signature + " PUBKEY " + meta.uploader_pubkey;
         }
         response += "\n";
         return response;
