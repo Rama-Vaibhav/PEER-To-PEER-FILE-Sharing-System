@@ -222,14 +222,14 @@ All commands use underscore-separated format.
 
 ## Network Protocol Design
 
-### Client ↔ Tracker Protocol
+### Client ↔ Tracker Protocol (over TLS)
 
-All messages are newline-terminated (`\n`). The client maintains a persistent TCP connection to the tracker.
+All messages are newline-terminated (`\n`). The client maintains a **persistent TLS-encrypted** connection to the tracker.
 
 | Request | Response | Notes |
 |---------|----------|-------|
-| `create_user <uid> <pwd>\n` | `User created successfully\n` | |
-| `login <uid> <pwd> <ip:port>\n` | `Login successful\n` | Client appends its peer address |
+| `create_user <uid> <pwd>\n` | `User created successfully\n` | Password hashed with SHA-256+salt on tracker |
+| `login <uid> <pwd> <ip:port>\n` | `Login successful CERT <hex> KEY <hex>\n` | Tracker issues X.509 certificate for mTLS |
 | `logout\n` | `Logout successful\n` | |
 | `create_group <gid>\n` | `Group created successfully\n` | |
 | `join_group <gid>\n` | `Join request sent\n` | |
@@ -237,15 +237,15 @@ All messages are newline-terminated (`\n`). The client maintains a persistent TC
 | `list_groups\n` | `gid1 (owner: user1)\ngid2...\n` | Single response |
 | `list_requests <gid>\n` | `user1\nuser2\n` | |
 | `accept_request <gid> <uid>\n` | `Request accepted\n` | |
-| `UPLOAD_FILE <gid> <fname> <size> <filehash> <h1\|h2\|...>\n` | `SUCCESS: File metadata uploaded successfully.\n` | Single-line protocol |
-| `DOWNLOAD_FILE <gid> <fname>\n` | `DOWNLOAD_INFO <size> <ip1:port1,ip2:port2,...> \|h1\|h2\|...\n` | Multi-seeder response |
+| `UPLOAD_FILE <gid> <fname> <size> <hash> <pieces> <sig> <pubkey>\n` | `SUCCESS: File metadata uploaded.\n` | RSA-2048 signature + public key appended |
+| `DOWNLOAD_FILE <gid> <fname>\n` | `DOWNLOAD_INFO <size> <seeders> <hashes> SIG <sig> PUBKEY <pubkey>\n` | Includes signature for verification |
 | `UPDATE_SEEDER <gid> <fname>\n` | `OK\n` | Sent after download completes |
 | `LIST_FILES <gid>\n` | `file1 (size bytes)\n...\nEND_OF_LIST\n` | Multi-line, terminated |
 | `STOP_SEEDING <gid> <fname>\n` | `Tracker updated...\n` | |
 
-### Client ↔ Client (P2P) Protocol
+### Client ↔ Client (P2P) Protocol (over mTLS)
 
-Each peer runs an embedded TCP server. Connections are short-lived (one request per connection).
+Each peer runs an embedded server with **mutual TLS**. Both sides present X.509 certificates signed by the tracker CA.
 
 | Request | Response | Notes |
 |---------|----------|-------|
@@ -256,13 +256,13 @@ Each peer runs an embedded TCP server. Connections are short-lived (one request 
 - `PIECE_LEN 0\n` — Piece not available (file not found, piece index out of range, or partial download doesn't have this piece yet)
 - `BITMAP_ERROR\n` — Invalid request parameters
 
-### Tracker ↔ Tracker Sync Protocol
+### Tracker ↔ Tracker Sync Protocol (over TLS)
 
-Pipe-delimited (`|`) messages over a persistent TCP connection with heartbeat keep-alive.
+Pipe-delimited (`|`) messages over a **persistent TLS-encrypted** connection with heartbeat keep-alive.
 
 | Sync Message | Description |
 |--------------|-------------|
-| `SYNC\|CREATE_USER\|uid\|pwd` | New user registered |
+| `SYNC\|CREATE_USER\|uid\|hash\|salt` | New user registered (hashed password + salt) |
 | `SYNC\|CREATE_GROUP\|gid\|owner` | New group created |
 | `SYNC\|JOIN_GROUP\|gid\|uid` | Join request submitted |
 | `SYNC\|ACCEPT_REQUEST\|gid\|uid` | Join request accepted |
@@ -314,8 +314,10 @@ Before starting a download, the client queries all seeders for their piece avail
 
 ```
 User {
-    username, password, logged_in,
-    ip, port                           // Peer server address (set on login)
+    username,
+    password,                          // SHA-256 hash (never plaintext)
+    password_salt,                     // 16-byte random salt (hex-encoded)
+    logged_in, ip, port                // Peer server address (set on login)
 }
 
 Group {
@@ -326,9 +328,11 @@ Group {
 }
 
 FileMetadata {
-    filesize, file_hash,               // Full file SHA1
-    piece_hashes[],                    // Per-piece SHA1 (512KB chunks)
-    seeders[]                          // Usernames of users who have the complete file
+    filesize, file_hash,               // Full file SHA-256 (64 hex chars)
+    piece_hashes[],                    // Per-piece SHA-256 (512KB chunks)
+    seeders[],                         // Usernames of users who have the file
+    signature,                         // RSA-2048 digital signature (hex)
+    uploader_pubkey                    // Uploader's RSA public key (hex-encoded PEM)
 }
 ```
 
@@ -341,7 +345,7 @@ DownloadState {
     piece_status[]:    NEEDED / IN_FLIGHT / HAVE
     pieces_completed:  atomic<int>
     seeder_addresses:  vector<string>        // All available seeders
-    piece_hashes:      vector<string>        // Expected SHA1 per piece
+    piece_hashes:      vector<string>        // Expected SHA-256 per piece
     piece_rarity:      vector<int>           // Seeder count per piece
     piece_seeder_map:  vector<vector<int>>   // piece → seeder indices
     piece_retry_count: vector<int>           // Retry counter per piece
@@ -358,7 +362,7 @@ DownloadState {
 
 ### Design
 
-The two-tracker system uses a **bidirectional persistent TCP connection** for state synchronization:
+The two-tracker system uses a **bidirectional persistent TLS-encrypted connection** for state synchronization:
 
 1. **Listener Thread:** Each tracker listens on its `sync_port` for incoming connections from the peer tracker.
 2. **Connector Thread:** Each tracker actively attempts to connect to the peer tracker's `sync_port` with automatic retry (3-second backoff).
@@ -386,9 +390,10 @@ The two-tracker system uses a **bidirectional persistent TCP connection** for st
 - Last piece may be smaller than 512 KB
 
 ### Hashing Strategy
-1. **Piece-level SHA1:** Each 512KB chunk is independently hashed during upload. The hash is stored in `piece_hashes[]`.
-2. **Full-file SHA1:** The entire file is hashed using a streaming `SHA_CTX` (processes chunks sequentially without loading the full file into memory).
-3. **Download verification:** Each received piece is immediately verified against its expected SHA1 hash. Corrupted pieces are discarded and re-requested (up to 5 retries, potentially from a different seeder).
+1. **Piece-level SHA-256:** Each 512KB chunk is independently hashed with SHA-256 during upload. The 64-character hex hash is stored in `piece_hashes[]`.
+2. **Full-file SHA-256:** The entire file is hashed using a streaming `SHA256_CTX` (processes chunks sequentially without loading the full file into memory).
+3. **Download verification:** Each received piece is immediately verified against its expected SHA-256 hash. Corrupted pieces are discarded and re-requested (up to 5 retries, potentially from a different seeder).
+4. **Metadata authentication:** File metadata (filename, size, hashes) is signed with RSA-2048 by the uploader. Downloaders verify the signature before starting the download.
 
 ### Write Strategy
 - The destination file is pre-allocated to full size using `ftruncate()`.
@@ -425,20 +430,34 @@ The two-tracker system uses a **bidirectional persistent TCP connection** for st
 2. **Single tracker connection:** Each client connects to the first tracker listed in `tracker_info.txt`. There is no automatic failover to the second tracker.
 3. **No resume:** If a download is interrupted (client killed), it starts from scratch on restart.
 4. **No NAT traversal:** Peers must be directly reachable by IP:port.
-5. **No encryption:** All communication is plaintext TCP.
+5. **Single CA:** The tracker is the sole Certificate Authority. If compromised, all trust is broken.
+6. **No certificate revocation:** There is no CRL or OCSP mechanism to revoke compromised client certificates.
 
 ### Implemented Features
+
+#### Core P2P
 - [x] User registration and authentication
 - [x] Group creation, joining, leaving with ownership transfer
-- [x] File upload (metadata + SHA1 hashing)
+- [x] File upload (metadata + SHA-256 hashing)
 - [x] Multi-threaded file download with rarest-piece-first
 - [x] Multi-seeder support
 - [x] Partial file serving (serve pieces while still downloading)
-- [x] Piece-level SHA1 integrity verification
+- [x] Piece-level SHA-256 integrity verification
 - [x] Two-tracker synchronization with heartbeat
 - [x] Download progress tracking (`show_downloads`)
 - [x] Stop sharing (`stop_share`)
 - [x] Persistent seeding state across client restarts
+
+#### Security
+- [x] TLS 1.2+ encryption on all client↔tracker channels
+- [x] TLS 1.2+ encryption on tracker↔tracker sync
+- [x] Mutual TLS (mTLS) for P2P peer authentication
+- [x] PKI with tracker as Certificate Authority
+- [x] On-the-fly X.509 certificate issuance on login
+- [x] RSA-2048 digital signatures on file metadata
+- [x] SHA-256 file integrity (replacing broken SHA-1)
+- [x] Salted password hashing (SHA-256 with random 16-byte salt)
+- [x] RSA signature verification on download
 
 ---
 
@@ -486,8 +505,17 @@ The two-tracker system uses a **bidirectional persistent TCP connection** for st
 
 ### Verify File Integrity
 ```bash
-sha1sum /path/to/testfile.pdf /tmp/downloaded_testfile.pdf
-# Both hashes should match
+shasum -a 256 /path/to/testfile.pdf /tmp/downloaded_testfile.pdf
+# Both SHA-256 hashes should match
+```
+
+### Verify TLS is Active
+```bash
+# Connect to tracker with openssl s_client to verify TLS handshake
+openssl s_client -connect 127.0.0.1:6000 -CAfile certs/ca.crt
+
+# Verify traffic is encrypted (no plaintext visible)
+sudo tcpdump -i lo0 -X port 6000
 ```
 
 ### Test Tracker Sync
