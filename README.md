@@ -100,20 +100,20 @@ Key features:
 - **Compiler:** `g++` with C++17 support (GCC 7+ recommended)
 - **Libraries:** OpenSSL (`libssl-dev` / `openssl-devel`) for SHA1 hashing
 - **Threading:** POSIX threads (`-pthread`)
+- **Make:** `make` utility for building
 
-### Build the Tracker
+### Build the Project
+A `Makefile` is provided to simplify compilation.
+
 ```bash
-g++ -std=c++17 server/tracker.cpp server/common.cpp server/commands.cpp \
-    -o server/tracker -pthread
+# Compile both the tracker and the client
+make
+
+# Clean compiled binaries
+make clean
 ```
 
-### Build the Client
-```bash
-g++ -std=c++17 client/client.cpp client/filesend.cpp client/peer.cpp \
-    -o client/client -I/opt/homebrew/opt/openssl/include -L/opt/homebrew/opt/openssl/lib -lssl -lcrypto -pthread -Wno-deprecated-declarations
-```
-
-> **Note:** The `-Wno-deprecated-declarations` flag suppresses OpenSSL 3.0 deprecation warnings for the legacy SHA1 API. The functions remain fully functional.
+> **Note:** The `Makefile` automatically includes the necessary Homebrew OpenSSL paths for macOS and suppresses OpenSSL 3.0 deprecation warnings for the legacy SHA1 API.
 
 ---
 
