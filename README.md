@@ -110,7 +110,7 @@ g++ -std=c++17 server/tracker.cpp server/common.cpp server/commands.cpp \
 ### Build the Client
 ```bash
 g++ -std=c++17 client/client.cpp client/filesend.cpp client/peer.cpp \
-    -o client/client -lssl -lcrypto -pthread -Wno-deprecated-declarations
+    -o client/client -I/opt/homebrew/opt/openssl/include -L/opt/homebrew/opt/openssl/lib -lssl -lcrypto -pthread -Wno-deprecated-declarations
 ```
 
 > **Note:** The `-Wno-deprecated-declarations` flag suppresses OpenSSL 3.0 deprecation warnings for the legacy SHA1 API. The functions remain fully functional.

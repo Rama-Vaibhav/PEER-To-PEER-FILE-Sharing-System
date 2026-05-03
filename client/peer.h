@@ -1,6 +1,14 @@
 #ifndef PEER_H
 #define PEER_H
-#include<bits/stdc++.h>
+#include <iostream>
+#include <string>
+#include <vector>
+#include <map>
+#include <set>
+#include <mutex>
+#include <thread>
+#include <unordered_map>
+#include <algorithm>
 using namespace std;
 void peer_server_thread(string my_ip,int my_port);
 

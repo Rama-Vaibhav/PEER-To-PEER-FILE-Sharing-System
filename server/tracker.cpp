@@ -133,7 +133,7 @@ void sync_listener(int port)
     serv_addr.sin_family=AF_INET;
     serv_addr.sin_addr.s_addr=INADDR_ANY;
     serv_addr.sin_port=htons(port);
-    bind(sockfd,(struct sockaddr*)&serv_addr,sizeof(serv_addr));
+    ::bind(sockfd,(struct sockaddr*)&serv_addr,sizeof(serv_addr));
     listen(sockfd,5);
     newsockfd=accept(sockfd,(struct sockaddr*)&cli_addr,&clilen);
     {
@@ -262,7 +262,7 @@ static void sync_listener_thread(const TrackerInfo &self_info, atomic<bool> &glo
     serv_addr.sin_addr.s_addr = INADDR_ANY;
     serv_addr.sin_port = htons(self_info.sync_port);
 
-    if (bind(listenfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
+    if (::bind(listenfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
         perror("[sync listener] bind");
         close(listenfd);
         return;
@@ -471,7 +471,7 @@ int main(int argc, char *argv[]) {
     serv_addr.sin_addr.s_addr = INADDR_ANY;
     serv_addr.sin_port = htons(self.main_port);
 
-    if (bind(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) { perror("bind"); return 1; }
+    if (::bind(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) { perror("bind"); return 1; }
     if (listen(sockfd, 16) < 0) { perror("listen"); return 1; }
 
     cout << "Tracker (id=" << self.id << ") listening for clients on port " << self.main_port << "\n";

@@ -187,7 +187,7 @@ void peer_server_thread(string my_ip, int my_port) {
     addr.sin_addr.s_addr = inet_addr(my_ip.c_str());
     addr.sin_port = htons(my_port);
 
-    if (bind(listen_fd, (sockaddr*)&addr, sizeof(addr)) < 0) {
+    if (::bind(listen_fd, (sockaddr*)&addr, sizeof(addr)) < 0) {
         perror("[Peer Server] bind() failed");
         close(listen_fd);
         return;

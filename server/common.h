@@ -2,7 +2,15 @@
 #define COMMON_H
 
 #include <string>
-#include <bits/stdc++.h>
+#include <iostream>
+#include <string>
+#include <vector>
+#include <map>
+#include <set>
+#include <mutex>
+#include <thread>
+#include <unordered_map>
+#include <algorithm>
 #include <mutex>
 using namespace std;
 struct User {
