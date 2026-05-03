@@ -63,6 +63,7 @@ static string cmd_logout(string &current_user) {
     lock_guard<mutex> lock(state_mutex);
     auto it = users.find(current_user);
     if (it != users.end()) it->second.logged_in = false;
+    cout << "[SERVER] User '" << current_user << "' logged out\n";
     current_user.clear();
     return "Logout successful\n";
 }
@@ -93,6 +94,7 @@ static string cmd_join_group(const string &group_id, const string &current_user)
     if (find(g.pending_requests.begin(), g.pending_requests.end(), current_user) != g.pending_requests.end())
         return "Join request already pending\n";
     g.pending_requests.push_back(current_user);
+    cout << "[SERVER] User '" << current_user << "' sent a join request for group '" << group_id << "'\n";
     send_sync_update("SYNC|JOIN_GROUP|" + group_id + "|" + current_user);
     return "Join request sent\n";
 }
@@ -111,17 +113,20 @@ static string cmd_leave_group(const string &group_id, const string &current_user
         g.members.erase(mit); 
         if (g.members.empty()) {
             groups.erase(git);
+            cout << "[SERVER] Group '" << group_id << "' deleted (last member '" << current_user << "' left)\n";
             send_sync_update("SYNC|DELETE_GROUP|" + group_id);
             return "You were the last member. Group deleted.\n";
         } else {
             string new_owner = g.members[0];
             g.owner = new_owner;
+            cout << "[SERVER] User '" << current_user << "' left group '" << group_id << "'. Ownership transferred to '" << new_owner << "'\n";
             send_sync_update("SYNC|CHOWN|" + group_id + "|" + new_owner);
             send_sync_update("SYNC|LEAVE_GROUP|" + group_id + "|" + current_user);
             return "You have left the group. Ownership transferred to user '" + new_owner + "'.\n";
         }
     } else {
         g.members.erase(mit);
+        cout << "[SERVER] User '" << current_user << "' left group '" << group_id << "'\n";
         send_sync_update("SYNC|LEAVE_GROUP|" + group_id + "|" + current_user);
         return "Left group\n";
     }
@@ -161,6 +166,7 @@ static string cmd_accept_request(const string &group_id, const string &user_id, 
     if (pit == g.pending_requests.end()) return "No pending request from that user\n";
     g.members.push_back(user_id);
     g.pending_requests.erase(pit);
+    cout << "[SERVER] Owner '" << current_user << "' accepted join request from '" << user_id << "' for group '" << group_id << "'\n";
     send_sync_update("SYNC|ACCEPT_REQUEST|"+group_id+"|"+user_id);
     return "Request accepted\n";
 }

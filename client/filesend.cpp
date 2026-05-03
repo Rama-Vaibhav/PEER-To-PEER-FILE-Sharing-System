@@ -404,8 +404,20 @@ void start_download(const string& tracker_response, const string& dest_path, con
         return;
     }
 
+    // If dest_path is a directory, append the filename to it
+    string final_dest = dest_path;
+    struct stat dest_stat;
+    if (stat(dest_path.c_str(), &dest_stat) == 0 && S_ISDIR(dest_stat.st_mode)) {
+        // dest_path is an existing directory — append filename
+        final_dest = dest_path;
+        if (!final_dest.empty() && final_dest.back() != '/') final_dest += '/';
+        final_dest += filename;
+        cout << "Destination is a directory. Saving as: " << final_dest << endl;
+    }
+    state->destination_path = final_dest;
+
     // Create destination file
-    state->output_file_descriptor = open(dest_path.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0666);
+    state->output_file_descriptor = open(final_dest.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0666);
     if (state->output_file_descriptor < 0) {
         perror("Failed to create destination file");
         return;
@@ -486,7 +498,7 @@ void start_download(const string& tracker_response, const string& dest_path, con
     // Add to seeded files
     {
         lock_guard<mutex> lock(seeded_files_mutex);
-        seeded_files[filename] = dest_path;
+        seeded_files[filename] = state->destination_path;
         save_seeded_files(seeded_files);
     }
 
