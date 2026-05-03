@@ -58,7 +58,7 @@ void process_sync_message(const string &msg) {
             g.group_id=gid;
             g.owner=owner;
             g.members.push_back(owner);
-            groups[gid]=move(g);
+            groups[gid]=std::move(g);
             cout << "[SYNC] Created group " << gid << " with owner " << owner << " from peer\n";
         }
     }

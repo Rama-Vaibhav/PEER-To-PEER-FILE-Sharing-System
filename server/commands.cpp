@@ -30,7 +30,7 @@ string cmd_create_user(const string &username, const string &password) {
     u.username = username;
     u.password = password;
     u.logged_in = false;
-    users[username] = move(u);
+    users[username] = std::move(u);
     send_sync_update("SYNC|CREATE_USER|"+username+"|"+password);
     cout<< "[server] User '" << username << "' created successfully\n";
     return "User created successfully\n";
@@ -75,7 +75,7 @@ static string cmd_create_group(const string &group_id, const string &current_use
     g.group_id = group_id;
     g.owner = current_user;
     g.members.push_back(current_user);
-    groups[group_id] = move(g);
+    groups[group_id] = std::move(g);
     cout<<"[server] Group '" << group_id << "' created by user '" << current_user << "'\n";
     string sync_msg="SYNC|CREATE_GROUP|" +group_id+"|"+current_user+"\n";
     send_sync_update(sync_msg);
