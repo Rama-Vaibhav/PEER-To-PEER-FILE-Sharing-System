@@ -1,0 +1,4 @@
+client/client
+server/tracker
+*.log
+.DS_Store
