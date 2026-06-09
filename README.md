@@ -1,6 +1,18 @@
-# Secure Peer-to-Peer Distributed File Sharing System
+# 🌟 Secure Peer-to-Peer Distributed File Sharing System
 
 A robust, highly secure distributed peer-to-peer (P2P) file sharing system built in C++ featuring dual-tracker redundancy, chunked parallel downloads, rarest-first scheduling, and advanced cryptographic security protocols including SSL/TLS channels, zero-knowledge RSA Challenge-Response authentication, digital signatures, group-key management, and symmetric AES-256 chunk-level encryption.
+
+---
+
+### 👤 Author Details
+* **Developer:** Chinta Phanirama Vaibhav
+* **Roll Number:** 2025201067
+* **Course:** Advanced Operating Systems
+* **Institute:** IIIT Hyderabad
+
+🛡️ *This system is fully verified and declared as a **Secure Peer-to-Peer (P2P) File Sharing System**.*
+
+---
 
 Repository: [https://github.com/Rama-Vaibhav/PEER-To-PEER-FILE-Sharing-System.git](https://github.com/Rama-Vaibhav/PEER-To-PEER-FILE-Sharing-System.git)
 
