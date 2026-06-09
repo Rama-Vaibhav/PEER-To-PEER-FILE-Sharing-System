@@ -1,0 +1,23 @@
+# Compiled object files
+*.o
+client/*.o
+tracker/*.o
+common/*.o
+
+# Executables
+client/client
+tracker/tracker
+
+# Cryptographic Keys (PEM keys should never be committed)
+*.pem
+client/*_private.pem
+client/*_public.pem
+
+# Log files
+*.log
+client/*.log
+tracker/*.log
+
+# OS-specific files
+.DS_Store
+Thumbs.db
